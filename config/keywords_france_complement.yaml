@@ -1,0 +1,42 @@
+# France complement keyword configuration.
+# Country terms stay France-specific; industry keywords use the original UK/general HVAC set.
+countries:
+  France:
+    terms:
+      - France
+      - en France
+      - France métropolitaine
+
+industries:
+  heat_pump:
+    terms:
+      - heat pump installer
+      - heat pump company
+      - heat pump contractor
+    synonyms:
+      - air source heat pump installer
+      - geothermal heat pump contractor
+  hvac:
+    terms:
+      - HVAC contractor
+      - HVAC company
+      - air conditioning company
+    synonyms:
+      - cooling contractor
+      - ventilation contractor
+  mechanical_contractor:
+    terms:
+      - mechanical contractor
+      - MEP contractor
+      - building services contractor
+    synonyms:
+      - mechanical services company
+      - facility mechanical contractor
+  distributor:
+    terms:
+      - HVAC distributor
+      - heat pump distributor
+      - air conditioning dealer
+    synonyms:
+      - HVAC wholesaler
+      - heat pump supplier

@@ -1,0 +1,52 @@
+# 目标国家配置。
+# 每个国家下面的 terms 会参与关键词组合；可以加入英文名、本地语言名、城市名等。
+countries:
+  Turkey:
+    terms:
+      - Turkey
+      - Turkiye
+  Germany:
+    terms:
+      - Germany
+      - Deutschland
+  United Arab Emirates:
+    terms:
+      - United Arab Emirates
+      - UAE
+      - Dubai
+
+# 目标行业配置。
+# terms 是主要搜索词，synonyms 是同义词或补充表达；两者都会用于生成搜索关键词。
+industries:
+  heat_pump:
+    terms:
+      - heat pump installer
+      - heat pump company
+      - heat pump contractor
+    synonyms:
+      - air source heat pump installer
+      - geothermal heat pump contractor
+  hvac:
+    terms:
+      - HVAC contractor
+      - HVAC company
+      - air conditioning company
+    synonyms:
+      - cooling contractor
+      - ventilation contractor
+  mechanical_contractor:
+    terms:
+      - mechanical contractor
+      - MEP contractor
+      - building services contractor
+    synonyms:
+      - mechanical services company
+      - facility mechanical contractor
+  distributor:
+    terms:
+      - HVAC distributor
+      - heat pump distributor
+      - air conditioning dealer
+    synonyms:
+      - HVAC wholesaler
+      - heat pump supplier

@@ -1,0 +1,53 @@
+# 关键词配置文件路径；通常修改 config/keywords.yaml 来调整国家、行业和搜索词。
+keyword_config: config/keywords.yaml
+
+# 搜索结果输出 CSV；run_crawl.py 默认会读取这个文件继续抓取企业信息。
+output: company_websites.csv
+
+# 搜索状态目录；记录已完成和失败的关键词，便于断点续跑和失败重试。
+state_dir: .search_state
+
+# 搜索页面抓取方式：
+# - requests：速度快，适合大多数静态搜索结果页。
+# - browser：用浏览器渲染页面，慢一些，但对动态页面更稳；需要安装 scrapling。
+backend: browser
+
+# 启用的搜索引擎；支持 duckduckgo、bing，可同时配置多个。
+engines:
+  - duckduckgo
+
+# 每个搜索引擎针对同一个关键词抓取多少页结果。
+max_pages: 2
+
+# 限制本次最多处理多少个关键词；null 表示不限制。测试时可以改成 1 或 2。
+limit_keywords: null
+
+# true 表示只重试 .search_state/failed_keywords.csv 中失败过的关键词。
+retry_failed: false
+
+# 不同关键词之间等待的秒数；调大可降低被搜索引擎限流的概率。
+keyword_delay: 30.0
+
+# 同一个搜索引擎两次请求之间等待的秒数。
+engine_request_delay: 10.0
+
+# 单个搜索页面失败后的最大重试次数。
+max_retries: 3
+
+# 指数退避的初始等待秒数；搜索引擎阻断或网络波动时使用。
+backoff_base: 20.0
+
+# 指数退避的最大等待秒数，避免失败后无限延长。
+backoff_max: 180.0
+
+# HTTP/HTTPS 代理地址；留空表示不显式指定，例如 http://127.0.0.1:7890。
+proxy: ""
+
+# true 表示读取系统代理环境变量；false 表示忽略系统代理。
+use_system_proxy: true
+
+# 浏览器模式是否无界面运行；backend=requests 时此项无效。
+headless: true
+
+# 浏览器模式最多保留多少个页面；通常 1 就够，调大可能增加资源占用。
+browser_max_pages: 1

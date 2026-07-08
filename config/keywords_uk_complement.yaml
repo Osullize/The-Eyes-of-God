@@ -1,0 +1,49 @@
+# United Kingdom complement keyword configuration.
+# Country terms stay UK-specific; industry keywords use the France pool-heating set.
+countries:
+  United Kingdom:
+    terms:
+      - United Kingdom
+      - UK
+      - Great Britain
+      - England
+
+industries:
+  pool_heat_pump:
+    terms:
+      - swimming pool heat pumps
+      - pool heat pumps
+      - pool heat pump supplier
+      - pool heat pump distributor
+      - pool heat pump installer
+      - Pompes à chaleur pour piscines
+      - pompes à chaleur piscine
+      - pompe à chaleur piscine
+      - vente pompe à chaleur piscine
+      - fournisseur pompe à chaleur piscine
+      - installateur pompe à chaleur piscine
+
+  pool_heating:
+    terms:
+      - swimming pool heating
+      - pool heating
+      - pool heating systems
+      - pool heating equipment
+      - pool heating company
+      - Chauffage de piscine
+      - chauffage piscine
+      - système de chauffage de piscine
+      - système chauffage piscine
+      - équipement chauffage piscine
+      - entreprise chauffage de piscine
+
+  pool_heating_distribution:
+    terms:
+      - swimming pool heating distributor
+      - pool heating distributor
+      - pool heating supplier
+      - pool heating wholesaler
+      - Distribution du chauffage de piscine
+      - distributeur chauffage de piscine
+      - fournisseur chauffage de piscine
+      - grossiste chauffage de piscine

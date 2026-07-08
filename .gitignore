@@ -1,0 +1,61 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+
+# Local databases and database exports
+leadgen.db
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.backup
+
+# Frontend dependencies and builds
+node_modules/
+dist/
+frontend/node_modules/
+frontend/dist/
+
+# Runtime logs and local service state
+*.log
+*.pid
+.service_logs/
+frontend/.service_logs/
+
+# Search/crawl resume state
+.search_state*/
+.crawl_state*/
+
+# Generated search/crawl/profile artifacts
+company_websites*.csv
+company_info*.csv
+success_missing_profile_json_domains.txt
+profile_inputs/**/*.json
+profile_inputs/heat_pump_lead_analysis_outputs/
+
+# Local agent/tool state
+/.ccb/
+/.claude/
+/.codex/
+/.impeccable/
+/.understand-anything/
+
+# OS/editor files
+.DS_Store
+**/.DS_Store
+.idea/
+.vscode/

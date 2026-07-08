@@ -1,0 +1,43 @@
+# United Kingdom-specific keyword configuration.
+# Industry keywords match the original config/keywords.yaml.
+countries:
+  United Kingdom:
+    terms:
+      - United Kingdom
+      - UK
+      - Great Britain
+      - England
+
+industries:
+  heat_pump:
+    terms:
+      - heat pump installer
+      - heat pump company
+      - heat pump contractor
+    synonyms:
+      - air source heat pump installer
+      - geothermal heat pump contractor
+  hvac:
+    terms:
+      - HVAC contractor
+      - HVAC company
+      - air conditioning company
+    synonyms:
+      - cooling contractor
+      - ventilation contractor
+  mechanical_contractor:
+    terms:
+      - mechanical contractor
+      - MEP contractor
+      - building services contractor
+    synonyms:
+      - mechanical services company
+      - facility mechanical contractor
+  distributor:
+    terms:
+      - HVAC distributor
+      - heat pump distributor
+      - air conditioning dealer
+    synonyms:
+      - HVAC wholesaler
+      - heat pump supplier
