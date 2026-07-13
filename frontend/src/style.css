@@ -533,6 +533,22 @@ h3 {
   width: auto;
 }
 
+.raw-table-wrap th.selection-cell,
+.raw-table-wrap td.selection-cell {
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+  padding: 11px 10px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.selection-cell input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
 .raw-row {
   cursor: default;
 }
@@ -904,6 +920,24 @@ h3 {
 .ai-profile-contact-list {
   display: grid;
   gap: 8px;
+}
+
+.contact-analysis-summary {
+  display: grid;
+  gap: 12px;
+}
+
+.contact-analysis-strategy {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #dff7f2;
+  border-radius: 8px;
+  color: #0f4f4a;
+  background: #f0fdfa;
+}
+
+.contact-analysis-recommendations .contact-row {
+  grid-template-columns: auto minmax(0, 1fr) minmax(180px, auto);
 }
 
 .recommendation {

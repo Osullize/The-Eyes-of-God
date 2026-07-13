@@ -1,3 +1,5 @@
+from io import BytesIO
+from zipfile import ZipFile
 import unittest
 
 from fastapi.testclient import TestClient
@@ -113,6 +115,15 @@ class FastApiReadEndpointTests(unittest.TestCase):
                     evidence_json=["Sells pool heating"],
                     risk_flags_json=[],
                     recommended_action="prioritize_outreach",
+                    result_json={
+                        "contact_analysis": {
+                            "contact_quality": "high",
+                            "available_channels": ["email"],
+                            "preferred_channel": "email",
+                            "recommended_contacts": [],
+                            "outreach_strategy": "优先邮件联系。",
+                        }
+                    },
                     status="success",
                 )
             )
@@ -273,6 +284,7 @@ class FastApiReadEndpointTests(unittest.TestCase):
         self.assertEqual(body["items"][0]["customer_priority"], "A")
         self.assertEqual(body["items"][0]["score_total"], 86)
         self.assertEqual(body["items"][0]["contacts"][0]["value"], "sales@acme.example")
+        self.assertEqual(body["items"][0]["contact_analysis"]["preferred_channel"], "email")
 
     def test_keyword_groups_can_be_listed_created_updated_and_deleted(self) -> None:
         list_response = self.client.get("/keyword-groups")
@@ -324,6 +336,85 @@ class FastApiReadEndpointTests(unittest.TestCase):
         self.assertEqual(detail_body["name"], "Search France")
         self.assertEqual(detail_body["items"][0]["item_key"], "pool heat pump France")
         self.assertEqual(detail_body["items"][0]["result_json"], {"rows": 1})
+
+    def test_crawl_task_results_can_be_read_and_exported_as_xlsx(self) -> None:
+        with self.session_factory() as session:
+            acme = session.query(Domain).filter_by(domain="acme.example").one()
+            beta = session.query(Domain).filter_by(domain="beta.example").one()
+            crawl_run = TaskRun(task_type="crawl", name="Crawl France Pool", status="success")
+            session.add(crawl_run)
+            session.flush()
+            crawl_run_id = crawl_run.id
+            selected_crawl_result = CrawlResult(
+                domain_record=acme,
+                keyword="pool heat pump France",
+                company_name="Acme Pool Heating",
+                website="https://acme.example",
+                emails="sales@acme.example",
+                phones="+33 1 23 45 67",
+                possible_address="Paris",
+                description="Pool heat pump distributor",
+                crawled_pages="3",
+                status="success",
+                country="France",
+                industry="pool heat pump",
+                source_file=f"task:crawl:{crawl_run_id}",
+            )
+            unselected_crawl_result = CrawlResult(
+                domain_record=beta,
+                keyword="pool heater France",
+                company_name="Unselected Export Row",
+                website="https://unselected.example",
+                emails="skip@unselected.example",
+                phones="+33 9 99 99 99",
+                possible_address="Lyon",
+                description="Should not be in selected export",
+                crawled_pages="1",
+                status="success",
+                country="France",
+                industry="pool heater",
+                source_file=f"task:crawl:{crawl_run_id}",
+            )
+            session.add_all([selected_crawl_result, unselected_crawl_result])
+            session.flush()
+            selected_crawl_result_id = selected_crawl_result.id
+            session.commit()
+
+        result_response = self.client.get(f"/task-runs/{crawl_run_id}/results")
+        export_response = self.client.get(f"/task-runs/{crawl_run_id}/results/export.xlsx")
+        selected_export_response = self.client.get(
+            f"/raw-tables/crawl-results/export.xlsx?ids={selected_crawl_result_id}"
+        )
+
+        result_body = result_response.json()
+        self.assertEqual(result_response.status_code, 200)
+        self.assertEqual(result_body["task_run_id"], crawl_run_id)
+        self.assertEqual(result_body["result_type"], "crawl")
+        self.assertEqual(result_body["total"], 2)
+        self.assertTrue(any(item["emails"] == "sales@acme.example" for item in result_body["items"]))
+
+        self.assertEqual(export_response.status_code, 200)
+        self.assertEqual(
+            export_response.headers["content-type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertIn(f"crawl-task-{crawl_run_id}-results.xlsx", export_response.headers["content-disposition"])
+        with ZipFile(BytesIO(export_response.content)) as workbook:
+            sheet_xml = workbook.read("xl/worksheets/sheet1.xml").decode("utf-8")
+        self.assertIn("Acme Pool Heating", sheet_xml)
+        self.assertIn("sales@acme.example", sheet_xml)
+
+        self.assertEqual(selected_export_response.status_code, 200)
+        self.assertIn(
+            "crawl-results-selected.xlsx",
+            selected_export_response.headers["content-disposition"],
+        )
+        with ZipFile(BytesIO(selected_export_response.content)) as workbook:
+            selected_sheet_xml = workbook.read("xl/worksheets/sheet1.xml").decode("utf-8")
+        self.assertIn("Acme Pool Heating", selected_sheet_xml)
+        self.assertIn("sales@acme.example", selected_sheet_xml)
+        self.assertNotIn("Unselected Export Row", selected_sheet_xml)
+        self.assertNotIn("skip@unselected.example", selected_sheet_xml)
 
     def test_missing_task_run_returns_404(self) -> None:
         response = self.client.get("/task-runs/999")

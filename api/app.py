@@ -5,7 +5,7 @@ from typing import Any, Callable, Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy.orm import Session, sessionmaker
 
 from config.env import load_project_env
@@ -44,6 +44,7 @@ from database.queries import (
 )
 from database.session import DEFAULT_DATABASE_URL, create_engine_from_url, create_session_factory
 from database.task_batches import get_task_run_detail, list_task_runs, request_task_run_cancel
+from database.task_results import build_crawl_task_results_xlsx, build_selected_crawl_results_xlsx, get_task_run_results
 from tasks.handlers import run_ai_profile_task, run_crawl_task, run_import_existing_data_task, run_search_task
 from tasks.runner import run_task
 from tasks.celery_tasks import execute_task as celery_execute_task
@@ -160,6 +161,42 @@ def create_app(
         if detail is None:
             raise HTTPException(status_code=404, detail="Task run not found")
         return detail
+
+    @app.get("/task-runs/{task_run_id}/results")
+    def task_run_results(task_run_id: int, limit: int = 200, offset: int = 0) -> dict[str, Any]:
+        with db_session_factory() as session:
+            detail = get_task_run_results(session, task_run_id, limit=limit, offset=offset)
+        if detail is None:
+            raise HTTPException(status_code=404, detail="Task run not found")
+        return detail
+
+    @app.get("/task-runs/{task_run_id}/results/export.xlsx")
+    def export_task_run_results_xlsx(task_run_id: int) -> Response:
+        with db_session_factory() as session:
+            export = build_crawl_task_results_xlsx(session, task_run_id)
+        if export is None:
+            raise HTTPException(status_code=404, detail="Task run not found")
+        filename, content = export
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    @app.get("/raw-tables/crawl-results/export.xlsx")
+    def export_selected_crawl_results_xlsx(ids: str = "") -> Response:
+        crawl_result_ids = parse_id_list(ids)
+        if not crawl_result_ids:
+            raise HTTPException(status_code=400, detail="Select at least one crawl result")
+        if len(crawl_result_ids) > 1000:
+            raise HTTPException(status_code=400, detail="Cannot export more than 1000 crawl results at once")
+        with db_session_factory() as session:
+            filename, content = build_selected_crawl_results_xlsx(session, crawl_result_ids)
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
 
     @app.post("/task-runs/{task_run_id}/cancel")
     def cancel_task_run(task_run_id: int) -> dict[str, Any]:
@@ -393,6 +430,22 @@ def cors_origins_from_env(env: dict[str, str] | None = None) -> list[str]:
     values = env if env is not None else os.environ
     raw_origins = values.get("CORS_ORIGINS", "http://127.0.0.1:5173,http://localhost:5173")
     return [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+
+
+def parse_id_list(raw: str) -> list[int]:
+    ids: list[int] = []
+    for part in raw.split(","):
+        text = part.strip()
+        if not text:
+            continue
+        try:
+            value = int(text)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid crawl result id") from exc
+        if value <= 0:
+            raise HTTPException(status_code=400, detail="Invalid crawl result id")
+        ids.append(value)
+    return list(dict.fromkeys(ids))
 
 
 app = create_app(execution_mode=execution_mode_from_env())

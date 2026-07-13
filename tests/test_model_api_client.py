@@ -26,6 +26,7 @@ class ModelAPIClientTests(unittest.TestCase):
                                 "message": {
                                     "content": json.dumps(
                                         {
+                                            "company_name": "Acme Pool Heating",
                                             "profile_summary": "这是一家泳池热泵经销商。",
                                             "business_type": "经销商",
                                             "market_role": "渠道销售",
@@ -40,6 +41,20 @@ class ModelAPIClientTests(unittest.TestCase):
                                                 "contactability": 9,
                                                 "evidence_quality": 8,
                                                 "risk_penalty": 0,
+                                            },
+                                            "contact_analysis": {
+                                                "contact_quality": "high",
+                                                "available_channels": ["email", "phone"],
+                                                "preferred_channel": "email",
+                                                "recommended_contacts": [
+                                                    {
+                                                        "type": "email",
+                                                        "value": "sales@pool.example",
+                                                        "label": "销售邮箱",
+                                                        "reason": "适合发送渠道合作资料",
+                                                    }
+                                                ],
+                                                "outreach_strategy": "先邮件发送产品目录，再电话跟进。",
                                             },
                                             "evidence": ["页面明确销售泳池热泵"],
                                             "risk_flags": [],
@@ -66,7 +81,16 @@ class ModelAPIClientTests(unittest.TestCase):
             urlopen=fake_urlopen,
         )
 
-        result = client.analyze_profile({"company": {"domain": "pool.example"}})
+        result = client.analyze_profile(
+            {
+                "company": {"domain": "pool.example"},
+                "contacts": {
+                    "normalized_records": [
+                        {"kind": "email", "value": "sales@pool.example", "label": "销售邮箱"}
+                    ]
+                },
+            }
+        )
 
         self.assertEqual(result.content["profile_summary"], "这是一家泳池热泵经销商。")
         request, timeout = requests[0]
@@ -78,7 +102,15 @@ class ModelAPIClientTests(unittest.TestCase):
         self.assertEqual(payload["temperature"], 0.2)
         self.assertEqual(payload["response_format"], {"type": "json_object"})
         self.assertIn("所有自然语言内容必须使用中文", payload["messages"][0]["content"])
-        self.assertEqual(json.loads(payload["messages"][1]["content"])["profile_package"]["company"]["domain"], "pool.example")
+        self.assertIn("禁止编造", payload["messages"][0]["content"])
+        user_content = json.loads(payload["messages"][1]["content"])
+        self.assertEqual(user_content["profile_package"]["company"]["domain"], "pool.example")
+        self.assertEqual(
+            user_content["profile_package"]["contacts"]["normalized_records"][0]["value"],
+            "sales@pool.example",
+        )
+        self.assertIn("contact_analysis", user_content["schema"]["required"])
+        self.assertEqual(result.content["contact_analysis"]["preferred_channel"], "email")
 
     def test_api_key_is_required(self) -> None:
         with self.assertRaisesRegex(ValueError, "api_key is required"):

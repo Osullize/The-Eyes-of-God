@@ -4,8 +4,8 @@ import {
   Activity,
   ChevronLeft,
   ChevronRight,
-  CheckCircle2,
   Database,
+  Download,
   ExternalLink,
   FileJson,
   Flag,
@@ -52,6 +52,7 @@ import {
   startCrawlTask,
   startSearchTask,
   updateKeywordGroup,
+  exportSelectedRawCrawlResultsXlsx,
 } from "./api";
 import type {
   CandidateGroupRecord,
@@ -114,6 +115,7 @@ const stageCCompanies = ref<StageCCompany[]>([]);
 const rawDomainRows = ref<RawDomainRow[]>([]);
 const rawSearchResultRows = ref<RawSearchResultRow[]>([]);
 const rawCrawlResultRows = ref<RawCrawlResultRow[]>([]);
+const selectedRawCrawlResultIds = ref<number[]>([]);
 const rawAIProfileResultRows = ref<RawAIProfileResultRow[]>([]);
 const selectedAIProfileResultId = ref<number | null>(null);
 const aiProfilePreviewOpen = ref(false);
@@ -142,6 +144,7 @@ const loadingDomains = ref(false);
 const loadingDetail = ref(false);
 const taskSubmitting = ref(false);
 const cancellingTaskRunId = ref<number | null>(null);
+const exportingTaskRunResults = ref(false);
 const errorMessage = ref("");
 const taskMessage = ref("");
 const selectedTask = ref<ProgressTaskType>("crawl");
@@ -178,7 +181,7 @@ const rawTableFilters = reactive({
   status: "",
   engine: "",
   keyword: "",
-  limit: 20,
+  limit: 100,
   offset: 0,
 });
 
@@ -191,6 +194,7 @@ const aiProfileFilters = reactive({
   offset: 0,
 });
 const aiProfileDirectoryPageSizeOptions = [100, 300, 500];
+const rawTablePageSizeOptions = [100, 300, 500];
 
 const taskRunFilters = reactive({
   task_type: "",
@@ -492,6 +496,18 @@ const activeRawTableRows = computed<RawTableRow[]>(() => {
   if (selectedRawTable.value === "search_results") return rawSearchResultRows.value;
   return rawCrawlResultRows.value;
 });
+const rawTableColumnSpan = computed(() => activeRawTableColumns.value.length + (selectedRawTable.value === "crawl_results" ? 1 : 0));
+const selectedRawCrawlResultIdSet = computed(() => new Set(selectedRawCrawlResultIds.value));
+const currentPageRawCrawlResultIds = computed(() => rawCrawlResultRows.value.map((row) => row.id));
+const selectedRawCrawlResultCount = computed(() => selectedRawCrawlResultIds.value.length);
+const allCurrentPageRawCrawlResultsSelected = computed(() => {
+  const ids = currentPageRawCrawlResultIds.value;
+  return ids.length > 0 && ids.every((id) => selectedRawCrawlResultIdSet.value.has(id));
+});
+const someCurrentPageRawCrawlResultsSelected = computed(() => {
+  const ids = currentPageRawCrawlResultIds.value;
+  return ids.some((id) => selectedRawCrawlResultIdSet.value.has(id));
+});
 const showRawCountryFilter = computed(() => selectedRawTable.value === "search_results" || selectedRawTable.value === "crawl_results");
 const showRawStatusFilter = computed(() => selectedRawTable.value !== "search_results" && selectedRawTable.value !== "domains");
 const showRawEngineFilter = computed(() => selectedRawTable.value === "search_results");
@@ -661,6 +677,22 @@ async function loadTaskRunDetail(id: number) {
   } finally {
     loadingTaskRunDetail.value = false;
   }
+}
+
+async function openTaskRunResults(taskRun: TaskRunRecord) {
+  if (!canViewTaskRunResults(taskRun)) return;
+  errorMessage.value = "";
+  clearRawCrawlResultSelection();
+  selectedRawTable.value = "crawl_results";
+  rawTableFilters.q = `task:crawl:${taskRun.id}`;
+  rawTableFilters.country = "";
+  rawTableFilters.status = "";
+  rawTableFilters.engine = "";
+  rawTableFilters.keyword = "";
+  rawTableFilters.offset = 0;
+  activeModule.value = "rawTables";
+  await loadRawTable(true);
+  selectCurrentPageRawCrawlResults();
 }
 
 async function loadCompanyLibrary(resetPage = false) {
@@ -1040,6 +1072,10 @@ function canCancelTaskRun(taskRun: TaskRunRecord) {
   return taskRun.status === "running" || taskRun.status === "pending";
 }
 
+function canViewTaskRunResults(taskRun: TaskRunRecord) {
+  return taskRun.task_type === "crawl";
+}
+
 async function cancelActiveTaskRun() {
   if (!activeTaskProgress.value || !canCancelTaskRun(activeTaskProgress.value)) return;
   await cancelTaskRunById(activeTaskProgress.value.id);
@@ -1070,6 +1106,21 @@ async function cancelTaskRunById(taskRunId: number) {
   }
 }
 
+async function exportCurrentCrawlTaskResultsXlsx() {
+  const selectedIds = selectedRawCrawlResultIds.value;
+  if (selectedIds.length === 0) return;
+  exportingTaskRunResults.value = true;
+  errorMessage.value = "";
+  try {
+    const { blob, filename } = await exportSelectedRawCrawlResultsXlsx(selectedIds);
+    downloadBlobFile(filename, blob);
+  } catch (error) {
+    setError(error);
+  } finally {
+    exportingTaskRunResults.value = false;
+  }
+}
+
 function applyFilters() {
   errorMessage.value = "";
   void loadDomains(true);
@@ -1082,6 +1133,7 @@ function applyLibraryFilters() {
 
 function applyRawTableFilters() {
   errorMessage.value = "";
+  clearRawCrawlResultSelection();
   void loadRawTable(true);
 }
 
@@ -1108,7 +1160,55 @@ function setLibraryStage(stage: "stageA" | "stageB" | "stageC") {
 
 function setRawTable(table: RawTableKey) {
   selectedRawTable.value = table;
+  clearRawCrawlResultSelection();
   void loadRawTable(true);
+}
+
+function setRawTablePageSize(event: Event) {
+  const value = Number((event.target as HTMLSelectElement).value);
+  if (!rawTablePageSizeOptions.includes(value)) return;
+  rawTableFilters.limit = value;
+  clearRawCrawlResultSelection();
+  void loadRawTable(true);
+}
+
+function clearRawCrawlResultSelection() {
+  selectedRawCrawlResultIds.value = [];
+}
+
+function selectCurrentPageRawCrawlResults() {
+  if (selectedRawTable.value !== "crawl_results") return;
+  const selectedIds = new Set(selectedRawCrawlResultIds.value);
+  for (const id of currentPageRawCrawlResultIds.value) {
+    selectedIds.add(id);
+  }
+  selectedRawCrawlResultIds.value = Array.from(selectedIds);
+}
+
+function toggleCurrentPageRawCrawlResults() {
+  if (selectedRawTable.value !== "crawl_results") return;
+  const pageIds = new Set(currentPageRawCrawlResultIds.value);
+  if (allCurrentPageRawCrawlResultsSelected.value) {
+    selectedRawCrawlResultIds.value = selectedRawCrawlResultIds.value.filter((id) => !pageIds.has(id));
+    return;
+  }
+  selectCurrentPageRawCrawlResults();
+}
+
+function isRawCrawlResultSelected(row: RawTableRow) {
+  const id = rawRowNumericId(row);
+  return id !== null && selectedRawCrawlResultIdSet.value.has(id);
+}
+
+function toggleRawCrawlResultSelection(row: RawTableRow) {
+  if (selectedRawTable.value !== "crawl_results") return;
+  const id = rawRowNumericId(row);
+  if (id === null) return;
+  if (selectedRawCrawlResultIdSet.value.has(id)) {
+    selectedRawCrawlResultIds.value = selectedRawCrawlResultIds.value.filter((selectedId) => selectedId !== id);
+    return;
+  }
+  selectedRawCrawlResultIds.value = [...selectedRawCrawlResultIds.value, id];
 }
 
 function openAIProfilePreview(result: RawAIProfileResultRow) {
@@ -1616,6 +1716,7 @@ function toAIProfileExportProfile(result: RawAIProfileResultRow) {
     { key: "market_role", label: "市场角色", content: result.market_role || "未记录" },
     { key: "score_breakdown", label: "评分明细", content: result.score_breakdown_json || {} },
     { key: "recommended_action", label: "推荐动作", content: result.recommended_action || "未记录" },
+    { key: "contact_analysis", label: "联系方式分析", content: result.contact_analysis || {} },
     { key: "contacts", label: "对应联系方式", content: result.contacts || [] },
     { key: "evidence", label: "证据", content: result.evidence_json || [] },
     { key: "risk_flags", label: "风险点", content: result.risk_flags_json || [] },
@@ -1700,13 +1801,46 @@ function renderAIProfileReportPage(profile: AIProfileExportProfile) {
 
 function renderAIProfileReportSection(section: AIProfileReportSection) {
   const recommendationClass = section.key === "recommended_action" ? " recommendation" : "";
-  const content = section.key === "contacts" ? renderAIProfileContactList(section.content) : renderExportContent(section.content);
+  let content = renderExportContent(section.content);
+  if (section.key === "contacts") content = renderAIProfileContactList(section.content);
+  if (section.key === "contact_analysis") content = renderAIProfileContactAnalysis(section.content);
   return `<section class="report-section">
     <h3>${escapeHtml(section.label)}</h3>
     <div class="report-section-body${recommendationClass}">
       ${content}
     </div>
   </section>`;
+}
+
+function renderAIProfileContactAnalysis(content: unknown): string {
+  const analysis = content && typeof content === "object"
+    ? (content as RawAIProfileResultRow["contact_analysis"])
+    : {};
+  if (!Object.keys(analysis).length) return `<p class="muted">旧画像暂无联系方式分析，请重新运行画像任务。</p>`;
+
+  const channels = (analysis.available_channels || []).map(formatAIContactChannel).join("、") || "无";
+  const recommendations = analysis.recommended_contacts || [];
+  const recommendedHtml = recommendations.length
+    ? `<div class="contact-list">${recommendations
+        .map(
+          (contact) => `<div class="contact-row">
+            <span class="contact-kind">${escapeHtml(formatAIContactChannel(contact.type))}</span>
+            <strong>${escapeHtml(contact.value || "未记录")}</strong>
+            <small>${escapeHtml([contact.label, contact.reason].filter(Boolean).join(" · ") || "未记录")}</small>
+          </div>`,
+        )
+        .join("")}</div>`
+    : `<p class="muted">没有推荐的直接联系方式。</p>`;
+
+  return `<div class="contact-analysis-summary">
+    <div class="score-breakdown">
+      <div><span>联系质量</span><strong>${escapeHtml(formatAIContactQuality(analysis.contact_quality))}</strong></div>
+      <div><span>可用渠道</span><strong>${escapeHtml(channels)}</strong></div>
+      <div><span>首选渠道</span><strong>${escapeHtml(formatAIContactChannel(analysis.preferred_channel || "none"))}</strong></div>
+    </div>
+    ${recommendedHtml}
+    <p>${escapeHtml(analysis.outreach_strategy || "未记录联系策略")}</p>
+  </div>`;
 }
 
 function renderAIProfileContactList(content: unknown): string {
@@ -1765,6 +1899,10 @@ function escapeHtml(value: unknown) {
 
 function downloadHtmlFile(filename: string, html: string) {
   const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  downloadBlobFile(filename, blob);
+}
+
+function downloadBlobFile(filename: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -1849,6 +1987,19 @@ function formatAIProfileContactKind(kind: string) {
   return kind || "联系方式";
 }
 
+function formatAIContactChannel(channel?: string) {
+  if (channel === "contact_form") return "联系表单";
+  if (channel === "none") return "无";
+  return formatAIProfileContactKind(channel || "");
+}
+
+function formatAIContactQuality(quality?: string) {
+  if (quality === "high") return "高";
+  if (quality === "medium") return "中";
+  if (quality === "low") return "低";
+  return "无";
+}
+
 function contactDisplayMeta(contact: Contact) {
   const kindLabel = formatAIProfileContactKind(contact.kind);
   return contact.label ? `${kindLabel} · ${contact.label}` : kindLabel;
@@ -1859,6 +2010,12 @@ function rawCellValue(row: RawTableRow, key: string) {
   if (value === null || value === undefined || value === "") return "未记录";
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
+}
+
+function rawRowNumericId(row: RawTableRow) {
+  const value = (row as unknown as Record<string, unknown>).id;
+  const id = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(id) && id > 0 ? id : null;
 }
 
 function contactHref(contact: Contact) {
@@ -2539,6 +2696,15 @@ onBeforeUnmount(() => {
               <div class="detail-actions">
                 <span :class="statusClass(selectedTaskRun.status)">{{ statusText(selectedTaskRun.status) }}</span>
                 <button
+                  v-if="canViewTaskRunResults(selectedTaskRun)"
+                  class="icon-button primary"
+                  type="button"
+                  @click="openTaskRunResults(selectedTaskRun)"
+                >
+                  <ExternalLink :size="16" />
+                  查看结果
+                </button>
+                <button
                   v-if="selectedTaskRunCanCancel"
                   class="icon-button danger"
                   type="button"
@@ -2810,12 +2976,33 @@ onBeforeUnmount(() => {
           <Search :size="16" />
           筛选
         </button>
+        <button
+          v-if="selectedRawTable === 'crawl_results'"
+          class="icon-button primary"
+          type="button"
+          :disabled="selectedRawCrawlResultCount === 0 || exportingTaskRunResults || loadingRawTable"
+          title="选中抓取结果后可导出"
+          @click="exportCurrentCrawlTaskResultsXlsx"
+        >
+          <Loader2 v-if="exportingTaskRunResults" :size="16" class="spin" />
+          <Download v-else :size="16" />
+          导出XLSX
+        </button>
       </div>
 
       <div class="table-wrap raw-table-wrap">
         <table>
           <thead>
             <tr>
+              <th v-if="selectedRawTable === 'crawl_results'" class="selection-cell">
+                <input
+                  type="checkbox"
+                  :checked="allCurrentPageRawCrawlResultsSelected"
+                  :indeterminate.prop="someCurrentPageRawCrawlResultsSelected && !allCurrentPageRawCrawlResultsSelected"
+                  aria-label="选择当前页全部抓取结果"
+                  @change="toggleCurrentPageRawCrawlResults"
+                />
+              </th>
               <th v-for="column in activeRawTableColumns" :key="column.key">
                 {{ column.label }}
               </th>
@@ -2823,20 +3010,29 @@ onBeforeUnmount(() => {
           </thead>
           <tbody>
             <tr v-if="loadingRawTable">
-              <td :colspan="activeRawTableColumns.length" class="loading-cell">
+              <td :colspan="rawTableColumnSpan" class="loading-cell">
                 <Loader2 :size="16" class="spin" />
                 正在加载审计 / 排错数据
               </td>
             </tr>
             <template v-else>
               <tr v-for="row in activeRawTableRows" :key="`${selectedRawTable}-${rawCellValue(row, 'id')}`" class="raw-row">
+                <td v-if="selectedRawTable === 'crawl_results'" class="selection-cell">
+                  <input
+                    type="checkbox"
+                    :checked="isRawCrawlResultSelected(row)"
+                    aria-label="选择这条抓取结果"
+                    @change="toggleRawCrawlResultSelection(row)"
+                    @click.stop
+                  />
+                </td>
                 <td v-for="column in activeRawTableColumns" :key="column.key" class="raw-cell" :title="rawCellValue(row, column.key)">
                   {{ rawCellValue(row, column.key) }}
                 </td>
               </tr>
             </template>
             <tr v-if="!loadingRawTable && activeRawTableRows.length === 0">
-              <td :colspan="activeRawTableColumns.length" class="empty-cell">当前筛选下没有数据。</td>
+              <td :colspan="rawTableColumnSpan" class="empty-cell">当前筛选下没有数据。</td>
             </tr>
           </tbody>
         </table>
@@ -2845,6 +3041,14 @@ onBeforeUnmount(() => {
       <footer class="pager">
         <span>共 {{ rawTableTotal.toLocaleString() }} 行 · 第 {{ rawTableCurrentPage }} / {{ rawTableTotalPages }} 页</span>
         <div>
+          <label v-if="selectedRawTable === 'crawl_results'" class="page-size-control">
+            最大显示条数
+            <select :value="rawTableFilters.limit" @change="setRawTablePageSize">
+              <option v-for="option in rawTablePageSizeOptions" :key="option" :value="option">
+                {{ option }}
+              </option>
+            </select>
+          </label>
           <button class="square-button" type="button" :disabled="!canRawTableGoPrevious" aria-label="上一页" @click="previousRawTablePage">
             <ChevronLeft :size="18" />
           </button>
@@ -3038,6 +3242,42 @@ onBeforeUnmount(() => {
                     <h3>推荐动作</h3>
                     <div class="ai-profile-section-body">
                       <p>{{ previewAIProfileResult.recommended_action || "未记录" }}</p>
+                    </div>
+                  </section>
+
+                  <section class="ai-profile-section profile-contact-analysis">
+                    <h3>联系方式分析</h3>
+                    <div class="ai-profile-section-body">
+                      <div v-if="Object.keys(previewAIProfileResult.contact_analysis || {}).length" class="contact-analysis-summary">
+                        <div class="score-breakdown">
+                          <div>
+                            <span>联系质量</span>
+                            <strong>{{ formatAIContactQuality(previewAIProfileResult.contact_analysis.contact_quality) }}</strong>
+                          </div>
+                          <div>
+                            <span>可用渠道</span>
+                            <strong>{{ (previewAIProfileResult.contact_analysis.available_channels || []).map(formatAIContactChannel).join("、") || "无" }}</strong>
+                          </div>
+                          <div>
+                            <span>首选渠道</span>
+                            <strong>{{ formatAIContactChannel(previewAIProfileResult.contact_analysis.preferred_channel || "none") }}</strong>
+                          </div>
+                        </div>
+                        <div v-if="previewAIProfileResult.contact_analysis.recommended_contacts?.length" class="ai-profile-contact-list contact-analysis-recommendations">
+                          <div v-for="(contact, index) in previewAIProfileResult.contact_analysis.recommended_contacts" :key="`ai-contact-${index}`" class="contact-row">
+                            <Globe2 :size="15" />
+                            <span>{{ contact.value || "未记录" }}</span>
+                            <small>
+                              {{ formatAIContactChannel(contact.type) }}
+                              <template v-if="contact.label"> · {{ contact.label }}</template>
+                              <template v-if="contact.reason"> · {{ contact.reason }}</template>
+                            </small>
+                          </div>
+                        </div>
+                        <p v-else class="muted">没有推荐的直接联系方式。</p>
+                        <p class="contact-analysis-strategy">{{ previewAIProfileResult.contact_analysis.outreach_strategy || "未记录联系策略" }}</p>
+                      </div>
+                      <p v-else class="muted">旧画像暂无联系方式分析，请重新运行画像任务。</p>
                     </div>
                   </section>
 

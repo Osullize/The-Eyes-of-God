@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from collections import Counter
+from copy import deepcopy
+from hashlib import sha256
+import json
 from pathlib import Path
 from typing import Any, Callable
 
@@ -24,7 +27,7 @@ from database.candidate_groups import (
 )
 from database.importers import ImportSummary
 from database.keyword_groups import generate_keyword_specs
-from database.models import CountrySignal, CrawlResult, Domain, KeywordGroup, ProfilePackage, SearchResult, TaskRun
+from database.models import Contact, CountrySignal, CrawlResult, Domain, KeywordGroup, ProfilePackage, SearchResult, TaskRun
 from database.session import DEFAULT_DATABASE_URL, create_all, create_engine_from_url, create_session_factory
 from database.stage_persistence import (
     persist_crawl_rows_to_database,
@@ -313,6 +316,16 @@ def run_ai_profile_task(
                 .order_by(ProfilePackage.id)
             ).all()
             packages_by_id = {package.id: package for package in packages}
+            contacts_by_domain: dict[int, list[Contact]] = {}
+            domain_ids = sorted({package.domain_id for package in packages})
+            if domain_ids:
+                contact_rows = session.scalars(
+                    select(Contact)
+                    .where(Contact.domain_id.in_(domain_ids))
+                    .order_by(Contact.domain_id, Contact.kind, Contact.value, Contact.id)
+                ).all()
+                for contact in contact_rows:
+                    contacts_by_domain.setdefault(contact.domain_id, []).append(contact)
             for package_id in profile_package_ids:
                 item_id = item_ids.get(str(package_id))
                 if should_cancel():
@@ -329,8 +342,12 @@ def run_ai_profile_task(
                     start_task_item(session, item_id)
                     session.commit()
                 try:
+                    input_payload = build_ai_profile_input_payload(
+                        package,
+                        contacts_by_domain.get(package.domain_id, []),
+                    )
                     result = analyzer(
-                        package.payload_json,
+                        input_payload,
                         {
                             "model_provider": model_provider,
                             "model_name": model_name,
@@ -350,6 +367,7 @@ def run_ai_profile_task(
                         prompt_version=prompt_version,
                         task_run_id=task_run_id,
                         task_item_id=item_id,
+                        input_hash=ai_profile_input_hash(input_payload),
                     )
                     promoted_to_qualified_lead = sync_stage_c_from_ai_profile_result(session, ai_profile_result)
                     if created:
@@ -396,6 +414,39 @@ def run_ai_profile_task(
     if task_status:
         result["task_run_status"] = task_status
     return result
+
+
+def build_ai_profile_input_payload(
+    profile_package: ProfilePackage,
+    contacts: list[Contact],
+) -> dict[str, Any]:
+    stored_payload = profile_package.payload_json if isinstance(profile_package.payload_json, dict) else {}
+    payload = deepcopy(stored_payload)
+    stored_contacts = payload.get("contacts")
+    contact_payload = dict(stored_contacts) if isinstance(stored_contacts, dict) else {}
+
+    normalized_by_key: dict[tuple[str, str], dict[str, str]] = {}
+    for contact in contacts:
+        kind = str(contact.kind or "").strip().lower()
+        value = str(contact.value or "").strip()
+        if not kind or not value:
+            continue
+        key = (kind, value.casefold())
+        record = normalized_by_key.get(key)
+        label = str(contact.label or "").strip()
+        if record is None:
+            normalized_by_key[key] = {"kind": kind, "value": value, "label": label}
+        elif not record["label"] and label:
+            record["label"] = label
+
+    contact_payload["normalized_records"] = list(normalized_by_key.values())
+    payload["contacts"] = contact_payload
+    return payload
+
+
+def ai_profile_input_hash(payload: dict[str, Any]) -> str:
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def parse_engines(value: Any) -> list[str] | None:

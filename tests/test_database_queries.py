@@ -356,6 +356,15 @@ class DatabaseQueryTests(unittest.TestCase):
                     evidence_json=["Sells pool heating"],
                     risk_flags_json=[],
                     recommended_action="prioritize_outreach",
+                    result_json={
+                        "contact_analysis": {
+                            "contact_quality": "high",
+                            "available_channels": ["email"],
+                            "preferred_channel": "email",
+                            "recommended_contacts": [],
+                            "outreach_strategy": "优先邮件联系。",
+                        }
+                    },
                     status="success",
                 )
             )
@@ -379,6 +388,7 @@ class DatabaseQueryTests(unittest.TestCase):
         self.assertEqual(response["items"][0]["customer_priority"], "A")
         self.assertEqual(response["items"][0]["score_total"], 86)
         self.assertIn("product_relevance", response["items"][0]["score_breakdown_json"])
+        self.assertEqual(response["items"][0]["contact_analysis"]["preferred_channel"], "email")
 
     def test_list_raw_ai_profile_results_allows_large_directory_pages(self) -> None:
         with self.make_session() as session:

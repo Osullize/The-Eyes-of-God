@@ -18,6 +18,7 @@ def upsert_ai_profile_result(
     prompt_version: str,
     task_run_id: int | None = None,
     task_item_id: int | None = None,
+    input_hash: str | None = None,
 ) -> tuple[AIProfileResult, bool]:
     normalized = normalize_ai_profile_result(result)
     raw_response = normalized.pop("_raw_response", {})
@@ -45,7 +46,7 @@ def upsert_ai_profile_result(
     record.domain_id = profile_package.domain_id
     record.task_run_id = task_run_id
     record.task_item_id = task_item_id
-    record.input_hash = profile_package.content_hash
+    record.input_hash = input_hash or profile_package.content_hash
     record.company_name = str(normalized.get("company_name") or fallback_company_name(profile_package))
     normalized["company_name"] = record.company_name
     record.profile_summary = str(normalized.get("profile_summary") or "")
@@ -76,11 +77,14 @@ def normalize_ai_profile_result(result: dict[str, Any]) -> dict[str, Any]:
     normalized.setdefault("customer_priority", "")
     normalized["score_total"] = clamp_score(normalized.get("score_total"))
     normalized.setdefault("score_breakdown", {})
+    normalized.setdefault("contact_analysis", {})
     normalized.setdefault("evidence", [])
     normalized.setdefault("risk_flags", [])
     normalized.setdefault("recommended_action", "")
     if not isinstance(normalized["score_breakdown"], dict):
         normalized["score_breakdown"] = {}
+    if not isinstance(normalized["contact_analysis"], dict):
+        normalized["contact_analysis"] = {}
     if not isinstance(normalized["evidence"], list):
         normalized["evidence"] = [str(normalized["evidence"])]
     if not isinstance(normalized["risk_flags"], list):

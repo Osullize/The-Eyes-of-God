@@ -3201,3 +3201,208 @@ GET /raw-tables/crawl-results/export.xlsx?ids=1,2,3
 - Preserve the existing crawl-result viewing module and selected-row export design.
 - Do not reintroduce copying historical crawl results into later task IDs.
 - Obtain explicit user approval before synchronizing any test-worktree implementation into `/Users/zhize/Eyes`.
+
+## 2026-07-10 - Crawl Result Viewing, Selected XLSX Export, and Duplicate Crawl Clarification
+
+### User Context
+- The user wanted task results to be easy to find after a task finishes, especially crawl task results.
+- The user clarified not to add a new task-result module because the frontend already has an existing place to view crawl results: `审计排错 -> 抓取结果`.
+- The requested UX is:
+  - Task Center only shows `查看结果` as a jump button.
+  - Export belongs inside the crawl-result viewing area.
+  - Crawl-result rows can be selected individually or by selecting the current page.
+  - XLSX export should export selected crawl-result rows.
+  - The page should support larger page sizes so filtered results can be selected in bulk.
+
+### Final Behavior
+- `任务中心 -> 查看结果` now jumps to `审计排错 -> 抓取结果`, sets `rawTableFilters.q = task:crawl:<task_run_id>`, clears other raw-table filters, loads the first page, and selects the current page.
+- The separate `任务结果` navigation/module that had been temporarily added was removed.
+- The crawl-result page has:
+  - a checkbox before every row,
+  - a header checkbox before the column labels,
+  - header checkbox behavior for selecting/deselecting the current page,
+  - a fixed `导出XLSX` button that is disabled until at least one crawl result is selected.
+- Export now uses selected `crawl_results.id` values and calls:
+
+```text
+GET /raw-tables/crawl-results/export.xlsx?ids=1,2,3
+```
+
+- The old task-level crawl XLSX endpoint still exists for backend compatibility, but the frontend export action uses the selected-row endpoint.
+- The crawl-result page now has `最大显示条数` options:
+
+```text
+100 / 300 / 500
+```
+
+- Default raw-table page size was changed from `20` to `100`.
+
+### Backend Work
+- Added selected-row XLSX export support in `database/task_results.py`:
+  - `build_selected_crawl_results_xlsx(session, crawl_result_ids)`
+  - Preserves selected ID order.
+  - Uses the same XLSX generator and crawl-result columns as task-level export.
+- Added FastAPI endpoint in `api/app.py`:
+
+```text
+/raw-tables/crawl-results/export.xlsx?ids=...
+```
+
+- Added ID parsing and validation:
+  - empty selection returns `400`,
+  - invalid IDs return `400`,
+  - export is capped at 1000 IDs.
+
+### Frontend Work
+- Updated `frontend/src/App.vue`:
+  - Removed the added `taskResults` module and navigation item.
+  - Added selected crawl-result row state.
+  - Added current-page selection state.
+  - Added `selectCurrentPageRawCrawlResults()`, `toggleCurrentPageRawCrawlResults()`, `toggleRawCrawlResultSelection()`.
+  - `导出XLSX` now calls selected-row export and is disabled when no rows are selected.
+  - Added `最大显示条数` selector in the raw table pager for `抓取结果`.
+- Updated `frontend/src/api.ts`:
+  - Added `exportSelectedRawCrawlResultsXlsx(ids)`.
+- Updated `frontend/src/style.css`:
+  - Added fixed-width selection-cell styling.
+  - Reused existing page-size control styling.
+
+### Tests Added / Updated
+- `tests/test_api_read_endpoints.py`
+  - Verifies selected crawl-result XLSX export only contains selected rows.
+- `tests/test_frontend_task_results_module.py`
+  - Verifies Task Center has `查看结果` but no export button.
+  - Verifies there is no separate `taskResults` module.
+  - Verifies `查看结果` jumps to `rawTables/crawl_results` and auto-selects the current page.
+  - Verifies crawl-result view has row selection, page selection, selected-row export, and page-size options.
+
+### Duplicate Crawl Clarification
+- The user asked about two search/candidate flows with overlapping domains:
+  - `意大利泳池机 search #7`
+  - `意大利采暖机 search #19`
+- Confirmed the correct behavior:
+  - Duplicate domains can exist in both search results and both candidate groups.
+  - When a later crawl task uses a candidate group, already-crawled domains are skipped by default because `recrawl_existing=false`.
+  - Those skipped duplicate domains should not be written into the later crawl task's `task:crawl:<later_task_id>` result set.
+  - Candidate group `已抓` means "historically has a crawl result", not "was crawled by this later task".
+- A temporary implementation was started to copy already-crawled duplicate rows into the later task result ID, but the user clarified that this was wrong.
+- That code was fully reverted.
+- The temporary database backfill was also reverted:
+  - deleted 26 mistakenly backfilled `crawl_results` from `task:crawl:22`,
+  - deleted 27 corresponding `country_signals`,
+  - verified `task:crawl:22` returned to 96 crawl results and task `#22` has 96 task items.
+
+### Verification
+- Focused tests after selected-row export and page-size changes:
+
+```text
+python -m unittest tests.test_frontend_task_results_module tests.test_api_read_endpoints
+```
+
+passed with 24 tests.
+
+- Full relevant suite after reverting the duplicate-copy mistake:
+
+```text
+python -m unittest tests.test_database_queries tests.test_api_read_endpoints tests.test_task_handlers tests.test_frontend_task_results_module tests.test_frontend_task_progress_panel tests.test_frontend_task_console_distill
+```
+
+passed with 63 tests.
+
+- Frontend build:
+
+```text
+npm run build
+```
+
+passed after allowing Vite to write `frontend/node_modules/.vite-temp`.
+
+- Test services were kept running from the test worktree:
+  - FastAPI backend: `127.0.0.1:8000`
+  - Vite frontend: `127.0.0.1:5173`
+
+### Important Standing Note
+- Do not reintroduce automatic copying of historical crawl results into a later crawl task ID.
+- The intended model is:
+  - search/candidate groups can preserve duplicate evidence,
+  - crawl execution skips historically crawled domains by default,
+  - skipped historical domains do not appear in the later crawl task's result set unless the task actually re-crawls them with `recrawl_existing=true`.
+
+## 2026-07-11 - Include Contacts In AI Profile Analysis
+
+### User Context
+- The user asked to include extracted contact information in AI profile analysis.
+- Work remains in the test worktree and has not been synchronized to `/Users/zhize/Eyes`.
+
+### Work Summary
+- Upgraded the internal AI prompt version from `heat_pump_lead_cn_v1` to `heat_pump_lead_cn_v2`.
+- AI task input now merges the profile package contacts with all current normalized `contacts` rows for the same domain.
+- Normalized contact records are deduplicated by contact kind and value, and internal provenance/source labels are not sent to the model.
+- The actual AI input hash now includes the merged contact payload.
+- Added required `contact_analysis` output with:
+  - contact quality;
+  - available channels;
+  - preferred channel;
+  - up to three recommended contacts;
+  - Chinese outreach strategy.
+- Prompt rules prohibit inventing or rewriting contact values and require contactability scores to agree with the contact analysis.
+- Added contact analysis to the AI profile preview and offline HTML report while retaining the raw extracted contact list beside it.
+- Existing `cn_v1` results remain readable and return an empty contact analysis until re-analyzed.
+
+### Files Touched
+- `ai/lead_profile_prompt.py`
+- `tasks/handlers.py`
+- `database/ai_profiles.py`
+- `database/queries.py`
+- `frontend/src/types.ts`
+- `frontend/src/App.vue`
+- `frontend/src/style.css`
+- `tests/test_task_handlers.py`
+- `tests/test_model_api_client.py`
+- `tests/test_database_queries.py`
+- `tests/test_api_read_endpoints.py`
+- `tests/test_frontend_ai_profile_task.py`
+- `AI_WORKLOG.md`
+
+### Verification
+- Focused backend/frontend regression suite: 56 tests passed.
+- Full Python suite: 194 tests passed.
+- `npm run build`: Vue type-check and Vite production build passed.
+- Docker Desktop, `leadgen-postgres`, and `leadgen-redis` were restarted.
+- FastAPI health and database stats returned HTTP 200.
+- AI profile list API returns `contact_analysis`; historical `cn_v1` rows return `{}`.
+- Vite frontend returned HTTP 200 at `http://127.0.0.1:5173/`.
+
+### Next Steps
+- Re-run AI profiling for selected profile packages or source groups to generate `heat_pump_lead_cn_v2` contact analysis.
+- Review sample outputs before bulk re-analysis, especially recommended contact selection and contactability scoring.
+
+## 2026-07-13 - Promote Tested Changes To Formal Environment
+
+### User Context
+- The user explicitly approved migrating the completed test-environment changes into `/Users/zhize/Eyes`.
+
+### Work Summary
+- Synchronized the reviewed implementation files from the test directory into the formal Git working tree.
+- Promoted the crawl-result workflow:
+  - Task Center `查看结果` jumps to `审计排错 -> 抓取结果` with the task source filter.
+  - Crawl-result rows support individual/current-page selection.
+  - Selected rows can be exported through `/raw-tables/crawl-results/export.xlsx?ids=...`.
+  - Crawl-result page sizes support 100, 300, and 500 rows.
+- Promoted `heat_pump_lead_cn_v2` contact-aware AI analysis and its preview/offline-report UI.
+- Added the missing backward-compatible `find_url.py` and `find_messsage.py` entry points.
+- Preserved the formal `.gitignore`, local `frontend/.env.local`, database data, generated artifacts, logs, caches, `node_modules`, and `dist` exclusions.
+- Merged test and formal worklog history so the prior 7/8 and 7/10 formal context was not overwritten.
+
+### Verification
+- Formal-directory Python suite: 194 tests passed.
+- Installed formal frontend dependencies with `npm ci`.
+- Formal-directory `npm run build`: Vue type-check and Vite production build passed.
+- Started `leadgen-postgres` and `leadgen-redis`.
+- Started FastAPI and Vite from `/Users/zhize/Eyes`.
+- `/health`, `/database/stats`, AI profile list, and frontend homepage returned HTTP 200.
+- Selected-row XLSX export returned the correct MIME type and passed ZIP integrity validation.
+- Existing `heat_pump_lead_cn_v1` AI rows remain readable with empty `contact_analysis` until re-analyzed.
+
+### Git State
+- Changes are present in the formal working tree but were not committed or pushed during this migration.

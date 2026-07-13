@@ -38,6 +38,7 @@ class TaskHandlerTests(unittest.TestCase):
         def fake_analyzer(payload, options):
             calls.append({"payload": payload, "options": options})
             return {
+                "company_name": "Acme Pool Heating",
                 "profile_summary": "Pool heat pump distributor",
                 "business_type": "distributor",
                 "market_role": "pool equipment reseller",
@@ -45,6 +46,20 @@ class TaskHandlerTests(unittest.TestCase):
                 "customer_priority": "A",
                 "score_total": 86,
                 "score_breakdown": {"product_relevance": 30},
+                "contact_analysis": {
+                    "contact_quality": "high",
+                    "available_channels": ["email", "phone", "person"],
+                    "preferred_channel": "person",
+                    "recommended_contacts": [
+                        {
+                            "type": "person",
+                            "value": "buyer@acme.example",
+                            "label": "Jane Buyer | Purchasing Manager",
+                            "reason": "优先联系采购负责人",
+                        }
+                    ],
+                    "outreach_strategy": "先向采购负责人发送产品合作邮件，再电话跟进。",
+                },
                 "evidence": ["Sells swimming pool heating products"],
                 "risk_flags": [],
                 "recommended_action": "prioritize_outreach",
@@ -67,11 +82,43 @@ class TaskHandlerTests(unittest.TestCase):
                     page_count=2,
                     payload_json={
                         "company": {"domain": "acme.example", "company_name": "Acme Pool Heating"},
+                        "contacts": {"emails": ["legacy@acme.example"]},
                         "pages": [{"text": "Swimming pool heating and heat pumps"}],
                     },
                     content_hash="a" * 64,
                 )
                 session.add(package)
+                session.flush()
+                session.add_all(
+                    [
+                        Contact(
+                            domain_record=domain,
+                            kind="email",
+                            value="sales@acme.example",
+                            label="销售邮箱",
+                            source="crawl_csv",
+                        ),
+                        Contact(
+                            domain_record=domain,
+                            kind="email",
+                            value="sales@acme.example",
+                            source="profile_json",
+                        ),
+                        Contact(
+                            domain_record=domain,
+                            kind="phone",
+                            value="+39 02 1234 5678",
+                            source="profile_json",
+                        ),
+                        Contact(
+                            domain_record=domain,
+                            kind="person",
+                            value="buyer@acme.example",
+                            label="Jane Buyer | Purchasing Manager",
+                            source="profile_json",
+                        ),
+                    ]
+                )
                 session.commit()
                 package_id = package.id
             engine.dispose()
@@ -112,7 +159,10 @@ class TaskHandlerTests(unittest.TestCase):
         self.assertEqual(result.profile_package_id, package_id)
         self.assertEqual(result.model_provider, "deepseek")
         self.assertEqual(result.model_name, "deepseek-chat")
-        self.assertEqual(result.prompt_version, "heat_pump_lead_cn_v1")
+        self.assertEqual(result.prompt_version, "heat_pump_lead_cn_v2")
+        self.assertEqual(result.result_json["contact_analysis"]["preferred_channel"], "person")
+        self.assertEqual(len(result.input_hash), 64)
+        self.assertNotEqual(result.input_hash, "a" * 64)
         self.assertEqual(result.customer_priority, "A")
         self.assertEqual(result.score_total, 86)
         self.assertEqual(result.raw_response_json["id"], "fake-response")
@@ -129,6 +179,18 @@ class TaskHandlerTests(unittest.TestCase):
         self.assertEqual(scores["total"].score_value, 86)
         self.assertEqual(scores["product_relevance"].score_value, 30)
         self.assertEqual(calls[0]["payload"]["company"]["domain"], "acme.example")
+        self.assertEqual(calls[0]["payload"]["contacts"]["emails"], ["legacy@acme.example"])
+        normalized_contacts = calls[0]["payload"]["contacts"]["normalized_records"]
+        self.assertEqual(len(normalized_contacts), 3)
+        self.assertEqual(
+            {(contact["kind"], contact["value"]) for contact in normalized_contacts},
+            {
+                ("email", "sales@acme.example"),
+                ("phone", "+39 02 1234 5678"),
+                ("person", "buyer@acme.example"),
+            },
+        )
+        self.assertTrue(all("source" not in contact for contact in normalized_contacts))
         self.assertEqual(calls[0]["options"]["api_base_url"], "https://api.deepseek.com")
         self.assertNotIn("api_key", task_run.params_json)
 
@@ -185,7 +247,7 @@ class TaskHandlerTests(unittest.TestCase):
             )
 
         self.assertEqual(seen_options[0]["model_name"], "deepseek-reasoner")
-        self.assertEqual(seen_options[0]["prompt_version"], "heat_pump_lead_cn_v1")
+        self.assertEqual(seen_options[0]["prompt_version"], "heat_pump_lead_cn_v2")
 
     def test_run_ai_profile_task_initializes_model_api_client_with_runtime_credentials(self) -> None:
         seen_configs = []

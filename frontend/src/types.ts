@@ -113,6 +113,21 @@ export interface RawCrawlResultRow {
   created_at: string | null;
 }
 
+export interface AIProfileRecommendedContact {
+  type: string;
+  value: string;
+  label: string;
+  reason: string;
+}
+
+export interface AIProfileContactAnalysis {
+  contact_quality?: string;
+  available_channels?: string[];
+  preferred_channel?: string;
+  recommended_contacts?: AIProfileRecommendedContact[];
+  outreach_strategy?: string;
+}
+
 export interface RawAIProfileResultRow {
   id: number;
   domain_id: number;
@@ -120,6 +135,7 @@ export interface RawAIProfileResultRow {
   company_name: string;
   country: string;
   contacts: Contact[];
+  contact_analysis: AIProfileContactAnalysis;
   profile_package_id: number;
   task_run_id: number | null;
   task_item_id: number | null;

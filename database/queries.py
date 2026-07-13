@@ -552,6 +552,10 @@ def serialize_raw_ai_profile_result(
     country: str = "",
     contacts: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    result_json = result.result_json if isinstance(result.result_json, dict) else {}
+    contact_analysis = result_json.get("contact_analysis")
+    if not isinstance(contact_analysis, dict):
+        contact_analysis = {}
     return {
         "id": result.id,
         "domain_id": result.domain_id,
@@ -559,6 +563,7 @@ def serialize_raw_ai_profile_result(
         "company_name": result.company_name,
         "country": country,
         "contacts": contacts or [],
+        "contact_analysis": contact_analysis,
         "profile_package_id": result.profile_package_id,
         "task_run_id": result.task_run_id,
         "task_item_id": result.task_item_id,

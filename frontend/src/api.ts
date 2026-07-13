@@ -81,6 +81,30 @@ export async function fetchTaskRunDetail(id: number): Promise<TaskRunRecord> {
   return requestJson<TaskRunRecord>(`/task-runs/${id}`);
 }
 
+export async function exportTaskRunResultsXlsx(id: number): Promise<{ blob: Blob; filename: string }> {
+  const response = await fetch(`${apiBaseUrl}/task-runs/${id}/results/export.xlsx`);
+  if (!response.ok) {
+    throw new Error(`API ${response.status}: ${response.statusText}`);
+  }
+  return {
+    blob: await response.blob(),
+    filename: filenameFromContentDisposition(response.headers.get("content-disposition")) || `crawl-task-${id}-results.xlsx`,
+  };
+}
+
+export async function exportSelectedRawCrawlResultsXlsx(ids: number[]): Promise<{ blob: Blob; filename: string }> {
+  const params = new URLSearchParams();
+  params.set("ids", ids.join(","));
+  const response = await fetch(`${apiBaseUrl}/raw-tables/crawl-results/export.xlsx?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`API ${response.status}: ${response.statusText}`);
+  }
+  return {
+    blob: await response.blob(),
+    filename: filenameFromContentDisposition(response.headers.get("content-disposition")) || "crawl-results-selected.xlsx",
+  };
+}
+
 export async function cancelTaskRun(id: number): Promise<TaskRunRecord> {
   return requestJson<TaskRunRecord>(`/task-runs/${id}/cancel`, {
     method: "POST",
@@ -214,6 +238,11 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(`API ${response.status}: ${response.statusText}`);
   }
   return (await response.json()) as T;
+}
+
+function filenameFromContentDisposition(value: string | null): string {
+  const match = value?.match(/filename="?([^";]+)"?/i);
+  return match?.[1] || "";
 }
 
 function cleanPayload(payload: object): Record<string, unknown> {
