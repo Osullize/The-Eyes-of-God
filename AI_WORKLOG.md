@@ -3132,3 +3132,72 @@ Use this structure for each new entry:
 ### Next Steps
 - Open future Codex sessions from `server_migration_package`.
 - If using Git from this clean directory, run `git init` or connect it to the target remote from inside `server_migration_package`.
+
+## 2026-07-10 - Current Conversation and Saved Context Snapshot
+
+### Repository and Environment Rules
+- `/Users/zhize/Eyes` is the current formal repository. It has been synchronized with Git/GitHub, and the server production environment runs the formal version from this line of development.
+- All future implementation changes must first be made and verified in the test worktree:
+
+```text
+/Users/zhize/The Eyes of God/.worktrees/database-foundation
+```
+
+- Do not synchronize test-worktree code back into `/Users/zhize/Eyes` until the user has reviewed the result and explicitly approved the synchronization.
+- The two previously discovered local listeners are the intended test environment, not accidental duplicate services. At the last verification they were:
+  - FastAPI backend: `http://127.0.0.1:8000`
+  - Vite frontend: `http://127.0.0.1:5173`
+- This worklog entry is a direct user-requested documentation update in the formal directory. It does not mean the feature code described below has been synchronized into the formal repository.
+
+### Task and Result Data Model
+- Crawl-website output that was previously handled as CSV is now persisted primarily in the `crawl_results` database table.
+- Executable project tasks are represented by `task_runs.id`; per-target/per-keyword execution units are represented by `task_items` associated with the task run.
+- Crawl results can be tied to a crawl task through source identifiers such as `task:crawl:<task_run_id>`.
+- Candidate-group status `已抓` means that the domain has a historical crawl result. It does not by itself mean that the currently viewed/later crawl task executed that domain.
+
+### Agreed Crawl-Result UX
+- Do not add a new standalone task-result module. The existing result-viewing location remains `审计排错 -> 抓取结果` (`rawTables / crawl_results`).
+- Task Center contains only a `查看结果` action for crawl tasks; it must not contain the export action.
+- `查看结果` jumps to the existing crawl-result page, filters with `task:crawl:<task_run_id>`, clears unrelated filters, loads the first page, and selects all rows on that page.
+- The crawl-result page contains:
+  - one checkbox before each result row,
+  - one checkbox before the table column headers for selecting/deselecting the current page,
+  - a fixed `导出XLSX` button that is disabled until at least one row is selected,
+  - `最大显示条数` options of `100`, `300`, and `500`, with `100` as the default.
+- XLSX export is based on selected `crawl_results.id` values, not all rows belonging to a task. The test-worktree endpoint is:
+
+```text
+GET /raw-tables/crawl-results/export.xlsx?ids=1,2,3
+```
+
+- The endpoint rejects an empty/invalid ID list and caps one export at 1000 selected IDs.
+
+### Duplicate Crawl Semantics
+- The examples discussed were candidate/search flows `意大利泳池机 search #7` and `意大利采暖机 search #19`, which contain overlapping domains.
+- Duplicate domains may remain in both search results and candidate groups as evidence of each search task.
+- With the default `recrawl_existing=false`, a domain that already has a crawl result is excluded from a later crawl execution list.
+- A skipped historical duplicate must not be copied into the later task's `task:crawl:<later_task_id>` result set. It only belongs to the later task if that task actually re-crawls it with `recrawl_existing=true`.
+- A temporary change that copied historical rows into task `#22` was identified as incorrect and fully removed from the test-worktree code.
+- The temporary data was cleaned up by deleting 26 wrongly copied `crawl_results` rows and 27 related `country_signals`. Final verification showed task `#22` had 96 `task_items` and `task:crawl:22` had 96 crawl-result rows.
+- Residual audit note: the mistaken temporary run reported 20 domain records as updated through the normal upsert path. No before-value snapshot existed for those domain main fields, so only the inserted crawl-result and country-signal rows could be precisely reverted. No further domain-field restoration was requested.
+
+### Test-Worktree Implementation Status
+- Relevant implementation files in the test worktree include:
+  - `api/app.py`
+  - `database/task_results.py`
+  - `frontend/src/App.vue`
+  - `frontend/src/api.ts`
+  - `frontend/src/style.css`
+  - `frontend/src/types.ts`
+  - `tests/test_api_read_endpoints.py`
+  - `tests/test_frontend_task_results_module.py`
+- Focused result-view/export tests passed: 24 tests.
+- The broader related backend/frontend suite passed: 63 tests.
+- The frontend production build passed.
+- A live selected-row XLSX request was verified with HTTP 200 and the XLSX MIME type.
+
+### Standing Instructions
+- Continue all code changes in `/Users/zhize/The Eyes of God/.worktrees/database-foundation` first.
+- Preserve the existing crawl-result viewing module and selected-row export design.
+- Do not reintroduce copying historical crawl results into later task IDs.
+- Obtain explicit user approval before synchronizing any test-worktree implementation into `/Users/zhize/Eyes`.
